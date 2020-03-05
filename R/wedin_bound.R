@@ -15,7 +15,7 @@ get_wedin_bound_samples <- function(X, SVD, signal_rank, num_samples=1000){
     U_sampled_norms <- wedin_bound_resampling(X=X,
                                               perp_basis=U_perp,
                                               right_vectors=FALSE,
-                                              num_samples=num_samples)
+                                              num_samples=num_samples) # TODO: propagate cores var to higher level
 
     V_perp <- SVD[['v']][ , -(1:signal_rank)]
     V_sampled_norms <- wedin_bound_resampling(X=X,
@@ -36,17 +36,29 @@ get_wedin_bound_samples <- function(X, SVD, signal_rank, num_samples=1000){
 #' @param perp_basis Matrix. Either U_perp or V_perp: the remaining left/right singluar vectors of X after estimating the signal rank.
 #' @param right_vectors Boolean. Right multiplication or left multiplication.
 #' @param num_samples Integer. Number of vectors selected for resampling procedure.
-wedin_bound_resampling <- function(X, perp_basis, right_vectors, num_samples=1000){
+wedin_bound_resampling <- function(X, perp_basis, right_vectors, num_samples=1000, cores = 0){
 
     rank <- dim(perp_basis)[2]
     resampled_norms <- rep(0, num_samples)
 
-    for(s in 1:num_samples){
+    # print ("for cycle in wedin_bound_resampling")
 
+    library(doParallel)
+    library(parallel)
+
+    if (cores <= 0 || cores >= detectCores()[1]) {
+      print (paste0("Attempting to make cluster with available cores: ", detectCores()[1] - 4))
+      cores <- detectCores()[1] - 4
+    } else {
+      print (paste0("Attempting to make cluster with ", cores, " cores"))
+    }
+
+    cl <- makeCluster(cores)
+    registerDoParallel(cl)
+    resampled_norms <- foreach(s = 1:num_samples) %dopar% {
         sampled_col_index <- sample.int(n=dim(perp_basis)[2],
                                         size=rank,
                                         replace=TRUE)
-
 
         perp_resampled <- perp_basis[ , sampled_col_index]
 
@@ -57,10 +69,13 @@ wedin_bound_resampling <- function(X, perp_basis, right_vectors, num_samples=100
         }
 
         # operator L2 norm
-        resampled_norms[s] <- norm(resampled_projection,
-                                   type='2')
+        norm(resampled_projection, type='2')
     }
-
+    resampled_norms <- unlist(resampled_norms)
+    stopCluster(cl)
+    # print ("resampled_norms")
+    # print (length(resampled_norms))
+    # print (resampled_norms)
     resampled_norms
 }
 
